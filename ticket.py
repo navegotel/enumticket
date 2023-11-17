@@ -310,7 +310,7 @@ class PageLayout(object):
                 else:
                     currentpage = 0
         if invert is True:
-            self.number.reverse()
+            self.numbers.reverse()
                 
         
     def generate(self, canvas, order=STACKORDER, cropmarks=True, invert=False):
