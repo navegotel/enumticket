@@ -100,7 +100,7 @@ class Counter(Drawable):
         fmt = "{0:0" + str(digits) + "d}"
         canvas.saveState()
         if self.color is not None:
-            self.canvas.setFillColor(self.color)
+            canvas.setFillColor(self.color)
         if self.fontname is not None:
             canvas.setFont(self.fontname, self.fontsize)
         if self.alignment == ALIGNLEFT:
