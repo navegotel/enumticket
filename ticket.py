@@ -100,7 +100,7 @@ class Counter(Drawable):
         fmt = "{0:0" + str(digits) + "d}"
         canvas.saveState()
         if self.color is not None:
-            self.canvas.setFillColor(self.color)
+            canvas.setFillColor(self.color)
         if self.fontname is not None:
             canvas.setFont(self.fontname, self.fontsize)
         if self.alignment == ALIGNLEFT:
@@ -310,7 +310,7 @@ class PageLayout(object):
                 else:
                     currentpage = 0
         if invert is True:
-            self.number.reverse()
+            self.numbers.reverse()
                 
         
     def generate(self, canvas, order=STACKORDER, cropmarks=True, invert=False):
