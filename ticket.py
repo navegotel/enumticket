@@ -1,5 +1,7 @@
-"""enumticket is a module to impose tickets on a sheet of paper
-and enumerate them"""
+"""enumticket is a module to impose any type of documents with
+changing content on a sheet of paper and put changeable object
+on it such as counters, strings from a string list, etc.
+"""
 
 from random import shuffle
 from math import ceil
@@ -7,6 +9,8 @@ from collections import namedtuple
 from reportlab.lib.units import mm
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.colors import black, white
+from reportlab.pdfbase import pdfmetrics
+
 
 STACKORDER = 1
 SEQUENTIALORDER = 2
@@ -16,7 +20,23 @@ ALIGNCENTER = 1
 ALIGNLEFT = 2
 ALIGNRIGHT = 4
 
+CLOCKWISE = 1
+COUNTERCLOCKWISE = 2
+
 Margins = namedtuple('Margins', ['bottom', 'left', 'top', 'right'])
+
+
+
+def get_font_height(fontname, fontsize):
+    face = pdfmetrics.getFont(fontname).face
+    return (face.ascent - face.descent) / 1000 * fontsize
+    
+
+
+def format_number(digits, number):
+    fmt = "{0:0" + str(digits) + "d}"
+    return fmt.format(number)
+
 
 
 class Drawable(object):
@@ -85,31 +105,140 @@ class Box(Drawable):
         canvas.restoreState()
         
 
-class Counter(Drawable):
+
+class FontDrawable(Drawable):
     """
-    Draw the counter as a number on the ticket
+    Base class for any drawables which draw strings on the ticket
     """
-    def __init__(self, x, y, color=None, fontname=None, fontsize=12, alignment=ALIGNLEFT):
+    def __init__(self, x, y, color, fontname, fontsize):
         super().__init__(x, y)
         self.color = color
         self.fontname = fontname
         self.fontsize = fontsize
-        self.alignment = alignment
         
-    def draw(self, canvas, ticket, digits=5):
-        fmt = "{0:0" + str(digits) + "d}"
-        canvas.saveState()
+        
+    def draw(self, canvas, ticket):
+        """ 
+        When overriding this class, call saveState on the canvas
+        before calling super().draw(canvas, ticket) and restoreState
+        afterwards.
+        """
         if self.color is not None:
             canvas.setFillColor(self.color)
         if self.fontname is not None:
             canvas.setFont(self.fontname, self.fontsize)
-        if self.alignment == ALIGNLEFT:
-            canvas.drawString(ticket.x+self.x, ticket.y+self.y, fmt.format(ticket.number))
-        elif self.alignment == ALIGNRIGHT:
-            canvas.drawRightString(ticket.x+self.x, ticket.y+self.y, str(ticket.number))
-        elif self.alignment == ALIGNCENTER:
-            canvas.drawCentredString(ticket.x+self.x, ticket.y+self.y, str(ticket.number))
         
+        
+        
+class FontHorzDrawable(FontDrawable):
+    """
+    Base class for drawables that draw a horizontal string and 
+    therefore have an alignment param
+    """
+    def __init__(self, x, y, color=None, fontname=None, fontsize=12, digits=5, alignment=ALIGNLEFT):
+        super().__init__(x, y, color, fontname, fontsize)
+        self.alignment = alignment
+        
+    def draw_str(self, canvas, ticket, s):
+        if self.alignment == ALIGNLEFT:
+            canvas.drawString(ticket.x+self.x, ticket.y+self.y, s)
+        elif self.alignment == ALIGNRIGHT:
+            canvas.drawRightString(ticket.x+self.x, ticket.y+self.y, s)
+        elif self.alignment == ALIGNCENTER:
+            canvas.drawCentredString(ticket.x+self.x, ticket.y+self.y, s)
+
+
+
+class FontVertDrawable(FontDrawable):
+    def __init__(self, x, y, color=None, fontname=None, fontsize=12, direction=COUNTERCLOCKWISE):
+        super().__init__(x, y, color, fontname, fontsize)
+        self.direction = direction
+        
+    def draw_str(self, canvas, ticket, s):
+        fh = get_font_height(self.fontname, self.fontsize)
+        if self.direction == COUNTERCLOCKWISE:
+            canvas.translate(ticket.x+self.x+fh, ticket.y+self.y)
+            canvas.rotate(90)
+            canvas.drawString(0, 0, s)
+        elif self.direction == CLOCKWISE:
+            sw = pdfmetrics.stringWidth(self.label, self.fontname, self.fontsize)
+            canvas.translate(ticket.x+self.x, ticket.y+self.y+sw)
+            canvas.rotate(-90)
+            canvas.drawString(0, 0, s)
+
+
+class Counter(FontHorzDrawable):
+    """
+    Draw the counter as a number on the ticket
+    """
+    def __init__(self, x, y, color=None, fontname=None, fontsize=12, digits=5, alignment=ALIGNLEFT):
+        super().__init__(x, y, color, fontname, fontsize)
+        self.alignment = alignment
+        self.digits = digits
+        
+    def draw(self, canvas, ticket):
+        canvas.saveState()
+        super().draw(canvas, ticket)
+        self.draw_str(canvas, ticket, format_number(self.digits, ticket.number))
+        canvas.restoreState()
+
+
+
+class VerticalCounter(FontVertDrawable):
+    
+    def __init__(self, x, y, color=None, fontname=None, fontsize=12, digits=5, direction=COUNTERCLOCKWISE):
+        super().__init__(x, y, color, fontname, fontsize, direction)
+        self.digits = digits
+    
+    def draw(self, canvas, ticket):
+        canvas.saveState()
+        super().draw(canvas, ticket)
+        self.draw_str(canvas, ticket, format_number(self.digits, ticket.number))
+        canvas.restoreState()
+        
+        
+
+class Label(FontHorzDrawable):
+    """
+    Draw a string on the ticket
+    """
+    def __init__(self, x, y, color=None, fontname=None, fontsize=12, alignment=ALIGNLEFT):
+        super().__init__(x, y, color, fontname, fontsize, alignment)
+        
+    def draw(self, canvas, ticket):
+        canvas.saveState()
+        super().draw(canvas, ticket)
+        self.draw_str(canvas, ticket, ticket.get_label())
+        canvas.restoreState()
+        
+        
+class VerticalLabel(FontVertDrawable):
+    """
+    Draw a 90ª rotated label on the ticket. The string is translated
+    so that x, y corresponds to bottom left corner always.
+    
+    Atributes
+    ---------
+    direction: CLOCKWISE, COUNTERCLOCKWISE
+        specifiy the direction in which the label is rotated.
+    """
+        
+    def draw(self, canvas, ticket):
+        canvas.saveState()
+        super().draw(canvas, ticket)
+        self.draw_str(canvas, ticket, ticket.get_label())
+        canvas.restoreState()
+        
+        
+        
+class RotatedLabel(FontDrawable):
+    def __init__(self, x, y, color=None, fontname=None, fontsize=12, rotate=45):
+        canvas.saveState()
+        super().draw(canvas, ticket)
+        #TODO
+        canvas.restoreState()
+
+
 
 class Ticket(object):
     def __init__(self, width, height):
@@ -120,6 +249,13 @@ class Ticket(object):
         self.x = 0
         self.y = 0
         self.drawables = []
+        self.label = ""
+        
+    def get_label(self):
+        return self.label
+        
+    def set_label(self, label):
+        self.label = label
         
     def add_drawable(self, drawable):
         self.drawables.append(drawable)
@@ -134,8 +270,6 @@ class Ticket(object):
     def paint(self, canvas):
         """
         Paint ticket on the canvas.
-        If inc is true the ticket number is 
-        increased after painting
         """
         for drawable in self.drawables:
             drawable.draw(canvas, self)
@@ -177,7 +311,7 @@ class PageLayout(object):
         Right margin
     """
     def __init__(self, ticket, numtickets, numoffset=0, pagesize=A4, cropmarks=(5*mm, 0.25*mm), bleed=2*mm, 
-                 bottom=15*mm, left=15*mm, top=15*mm, right=15*mm):
+                 bottom=15*mm, left=15*mm, top=15*mm, right=15*mm, labels=[]):
         self.ticket = ticket
         self.numtickets = numtickets
         self.numoffset = numoffset
@@ -195,6 +329,7 @@ class PageLayout(object):
         self.usable_pagewidth = None
         self.usable_pageheight = None
         self.numbers=[]
+        self.labels = labels
         
     def set_margins(self, minmargins):
         """
@@ -311,8 +446,13 @@ class PageLayout(object):
                     currentpage = 0
         if invert is True:
             self.numbers.reverse()
-                
-        
+    
+    def get_label(self):
+        try:
+            return self.labels.pop()
+        except IndexError:
+            return ""
+
     def generate(self, canvas, order=STACKORDER, cropmarks=True, invert=False):
         """
         Layout tickets on canvas.
@@ -348,6 +488,7 @@ class PageLayout(object):
                 self.paint_cropmarks(canvas)
             for number in numbers:
                 self.ticket.set_number(number)
+                self.ticket.set_label(self.get_label())
                 x,y = self.get_cell(col, row)
                 self.ticket.set_origin(x, y)
                 self.ticket.paint(canvas)
