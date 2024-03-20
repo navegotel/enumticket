@@ -10,6 +10,9 @@ from reportlab.lib.units import mm
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.colors import black, white
 from reportlab.pdfbase import pdfmetrics
+from reportlab.lib.utils import ImageReader
+import qrcode
+import io
 
 
 STACKORDER = 1
@@ -22,6 +25,9 @@ ALIGNRIGHT = 4
 
 CLOCKWISE = 1
 COUNTERCLOCKWISE = 2
+
+LABEL = 1
+NUMBER = 2
 
 Margins = namedtuple('Margins', ['bottom', 'left', 'top', 'right'])
 
@@ -78,7 +84,9 @@ class Image(Drawable):
     def draw(self, canvas, ticket):
         canvas.drawImage(self.image, ticket.x, ticket.y, 
                          width=ticket.width, height=ticket.height)
-        
+
+
+
 class Box(Drawable):
     """
     Draw a box with rounded corner. Can be used as background for 
@@ -103,7 +111,50 @@ class Box(Drawable):
                          self.width, self.height, self.radius, 
                          stroke=1, fill=1)
         canvas.restoreState()
+
+
+class QrCodeDrawable(Drawable):
+    """
+    QR code.
+
+    Atributes
+    ---------
+    template: a template string where the number or label is fitted in.
+        This can be used to dynamically build URLs
+
+    datasource: can be either LABEL or NUMBER
+    """
+    def __init__(self, x, y, size, template="{0}", datasource=NUMBER, box_size=4, version=1, 
+                 fit=True, border=4, error_correction=qrcode.constants.ERROR_CORRECT_L,
+                 fill_color="black", back_color="white"):
+        super().__init__(x, y)
+        self.template = template
+        self.datasource = datasource
+        self.fit = fit
+        self.fill_color = fill_color
+        self.back_color= back_color
+        self.size = size
+        self.version = version
+        self.box_size = box_size
+        self.error_correction = error_correction
+        self.border = border
         
+    def draw(self, canvas, ticket):
+        canvas.saveState()
+        qr = qrcode.QRCode(version=self.version, box_size=self.box_size, error_correction=self.error_correction, border=self.border)
+        if self.datasource == NUMBER:
+            qr.add_data(self.template.format(ticket.number))
+        elif self.datasource == LABEL:
+            qr.add_data(self.template.format(ticket.get_label()))
+        qr.make(fit=self.fit)
+        pil_img = qr.make_image(fill_color=self.fill_color, back_color= self.back_color)
+        img_io = io.BytesIO()
+        pil_img.save(img_io, format='png')
+        img_io.seek(0)
+        img = ImageReader(img_io)
+        canvas.drawImage(img, ticket.x+self.x, ticket.y+self.y, width=self.size, height=self.size)
+        canvas.restoreState()
+
 
 
 class FontDrawable(Drawable):
